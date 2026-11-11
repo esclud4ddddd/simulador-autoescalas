@@ -108,6 +108,8 @@ details summary{cursor:pointer;font-weight:600;font-size:13px}
 body.satmode #map path[data-id]{fill-opacity:.35!important}
 body.satmode #map{background:#2b2f2c}
 #map g.truckg{cursor:grab}
+html:fullscreen body{overflow:auto}
+html:fullscreen #map{height:calc(100vh - 230px)}
 .status{font-size:12px;color:var(--muted);margin:0}
 .empty{color:var(--muted);font-size:13px}
 #intro{position:fixed;inset:0;z-index:60;background:var(--i-bg);color:#fff;display:grid;grid-template-rows:auto 1fr;overflow:hidden;transition:opacity .4s}
@@ -150,7 +152,7 @@ body.satmode #map{background:#2b2f2c}
         <button type="button" data-veh="aea4" aria-pressed="true">AEA 4 · 20 m</button>
         <button type="button" data-veh="aea2" aria-pressed="false">AEA 2 · 32 m</button>
       </div>
-      <button type="button" class="btn" id="introBack" style="padding:3px 10px;font-size:12px">← Inicio</button>
+      <div style="display:flex;gap:6px"><button type="button" class="btn" id="introBack" style="padding:3px 10px;font-size:12px">← Inicio</button><button type="button" class="btn" id="fullBtn" style="padding:3px 10px;font-size:12px">⛶ Pantalla completa</button></div>
       <p class="status" id="vehModel">Metz DLK 12-9 PLC III · 20 m</p>
       <p class="status" id="dbStatus">Cargando correcciones…</p>
     </div>
@@ -954,6 +956,8 @@ $("mTruck").onclick=()=>setMode("truck"); $("mSel").onclick=()=>setMode("sel"); 
 function setColor(c){ S.color=c; ["cReach","cLev","cAnch"].forEach(id=>$(id).setAttribute("aria-pressed", ({cReach:"reach",cLev:"lev",cAnch:"anch"})[id]===c)); update(); }
 $("cReach").onclick=()=>setColor("reach"); $("cLev").onclick=()=>setColor("lev"); $("cAnch").onclick=()=>setColor("anch");
 $("pkScope").onchange=e=>{ S.pkScope=e.target.value; };
+$("fullBtn").onclick=()=>{ const el=document.documentElement; if(document.fullscreenElement||document.webkitFullscreenElement){ (document.exitFullscreen||document.webkitExitFullscreen).call(document); } else { const f=el.requestFullscreen||el.webkitRequestFullscreen; if(f){ try{ const r=f.call(el); if(r&&r.catch) r.catch(()=>toast("Este navegador no permite pantalla completa aquí.")); }catch(_){ toast("Este navegador no permite pantalla completa aquí."); } } } };
+document.addEventListener("fullscreenchange",()=>{ $("fullBtn").textContent=document.fullscreenElement?"Salir de pantalla completa":"⛶ Pantalla completa"; setTimeout(setView,150); });
 $("satBtn").onclick=()=>{ S.sat=!S.sat; $("satBtn").setAttribute("aria-pressed",S.sat); updateSat(); };
 $("wq").addEventListener("input",()=>widthsTable());
 function presetStab(k){ const set=v=>{ S.zan={DI:v,DD:v,TI:v,TD:v}; };
@@ -1054,7 +1058,8 @@ alignToStreet(); setView(); update();
   function frame(now){ if(!run) return; const dt=Math.min(0.05,(now-last)/1000); last=now; step(T4,dt,now); step(T2,dt,now); requestAnimationFrame(frame); }
   if(reduce){ step(T4,0,0); step(T2,0,0); } else requestAnimationFrame(frame);
   function enter(){ run=false; box.classList.add("leaving"); setTimeout(()=>{ box.hidden=true; setView(); update(); },400); try{ history.replaceState(null,"","#simulador"); }catch(_){} }
-  $("introGo").onclick=enter;
+  function goFull(){ const el=document.documentElement, f=el.requestFullscreen||el.webkitRequestFullscreen; if(f&&!document.fullscreenElement){ try{ const r=f.call(el); if(r&&r.catch) r.catch(()=>{}); }catch(_){} } }
+  $("introGo").onclick=()=>{ goFull(); enter(); };
   $("introBack").onclick=()=>{ box.hidden=false; box.classList.remove("leaving"); run=true; last=performance.now(); requestAnimationFrame(frame); try{ history.replaceState(null,"",location.pathname+location.search); }catch(_){} };
 })();
 })();
