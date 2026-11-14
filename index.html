@@ -248,7 +248,9 @@ html:fullscreen #map{height:max(380px,calc(100vh - 250px))}
         </div>
       </div>
       <div class="toolbar zsec" id="loadRow" style="border-top:0">
-        <div class="zsec-row"><span class="zsec-h" style="margin:0">Cesta</span><div class="seg" role="group" aria-label="Carga en la cesta" id="loadSeg" style="flex-wrap:wrap"></div></div>
+        <div class="zsec-row"><span class="zsec-h" style="margin:0">Cesta</span><div class="seg" role="group" aria-label="Carga en la cesta" id="loadSeg" style="flex-wrap:wrap"></div>
+          <div class="seg" role="group" aria-label="Equipos en la cesta"><button type="button" data-eq="mon" aria-pressed="false" title="Monitor hidráulico en la cesta">💧 Monitor</button><button type="button" data-eq="cam" aria-pressed="false" title="Portacamilla en la cesta">🛏 Camilla</button></div></div>
+        <p class="hint" id="equipInfo" style="margin:4px 0 0"></p>
       </div>
       <div class="toolbar zsec" id="zanSec" style="border-top:0">
         <details id="zanDet" open><summary><span class="zsec-h">Zancas</span> <span class="hint" id="zanSum"></span></summary>
@@ -416,6 +418,13 @@ function xl(k,front){ const c=curCfg(front);
 function loadsX(front){ return LAD.loads.map(l=>({...l, x:xl(l.k,front)})); }
 function noBasket(){ const l=LAD.loads.find(x=>x.k===S.load); return !!(l&&l.nb); }
 function loadOf(k){ return LAD.loads.find(l=>l.k===k)||LAD.loads[0]; }
+// carga efectiva: monitor = campo de 2 personas (manguera llena ≈ 300 kg); camilla AEA 2 = campo de 3 personas (100 kg + 2 en cesta), AEA 4 = campo de 2 personas
+function effLoad(){ let k=S.load; if(S.mon) k=Math.max(k,2); if(S.cam) k=Math.max(k,LAD===VEH.aea2?3:2); return Math.min(k,Math.max(...LAD.loads.map(l=>l.k))); }
+function equipTxt(){ const a=[]; const e=effLoad();
+  if(S.mon) a.push(`Monitor en uso: según el manual Metz, con la manguera de alta presión la escalera solo puede moverse dentro del campo de 2 personas (llena de agua añade unos 300 kg; reacción del chorro hasta 1250 N).`);
+  if(S.cam) a.push(LAD===VEH.aea2?`Camilla (soporte SKL 111-03): 1 persona en la camilla (100 kg) y como máximo 2 en la cesta; se aplica el campo de 3 personas.${S.load>2?" <b>Hay más de 2 personas en la cesta: no permitido con camilla.</b>":""}`:`Portacamilla: camilla hasta 100 kg y debe quedar carga libre para 1 persona; como máximo 1 persona en la cesta y se aplica el campo de 2 personas.${S.load>1?" <b>Hay más de 1 persona en la cesta: no permitido con camilla.</b>":""}`);
+  if(a.length&&e!==S.load) a.push(`Cálculos con: <b>${loadOf(e).label}</b>.`);
+  return a.join(" "); }
 function evalPoint(d, y, load, front){
   const zs=zState(front); if(zs.off) return {st:"bad", why:"Zanca recogida en el lado de la fachada", ang:Math.atan2(y-LAD.py,d-LAD.px)*180/Math.PI, r:Math.hypot(d-LAD.px,y-LAD.py)};
   const dx=d-LAD.px, dy=y-LAD.py, ang=Math.atan2(dy,dx)*180/Math.PI, r=Math.hypot(dx,dy), L=loadOf(load);
@@ -498,7 +507,7 @@ function facadeOf(b,qx,qy){ let best=null;
 function analyse(b){
   const p=P(), {t,top}=targetsFor(b,p), T=S.truck, nb=targetPt(b,T.x,T.y);
   const d=nb.d, rel=relAngle(nb.qx,nb.qy), maxF=inMaxField(rel);
-  const fr=rel, zh=zancaHit(T.x,T.y,T.h); const rows=t.map(o=>{ const e=evalPoint(d,o.y,S.load,fr); let st=e.st, why=e.why;
+  const fr=rel, zh=zancaHit(T.x,T.y,T.h); const rows=t.map(o=>{ const e=evalPoint(d,o.y,effLoad(),fr); let st=e.st, why=e.why;
     if (zh){ st="bad"; why=zh.why; }
     if (st!=="bad"){ const h=treesOnPath(nb.qx,nb.qy,d,o.y,p); if(h.length){ st="bad"; why=`${h[0].k} en la trayectoria a ${h[0].along.toFixed(1)} m: la escalera pasaría a ${h[0].yl.toFixed(1)} m de altura y ${h[0].k==="Árbol"?"el árbol":"la farola"} mide ${h[0].H} m`; } }
     if (st==="ok" && !maxF){ st="warn"; why = LAD.field==="stab" ? "Lado con apoyos estrechos: campo reducido" : "Campo lateral reducido: comprobar acta"; }
@@ -530,7 +539,14 @@ function estW(s){ const ln=parseInt(s.ln)||0, base=ln?Math.max(ln,1)*3.25:s.e, b
   return Math.round(w*2)/2; }
 // PXOM: ancho entre aliñacións medido sobre los planos de ordenación; calzada = ese ancho menos aceras medias del PMUS
 function aceraPMUS(w){ return w>18?1.6:w>12?1.2:w>8?1.0:0.8; }
+let PKV=0; const PKI={obj:null,v:-1,m:new Map()};
+function pkMax(s,side){ if(S.park==="none") return 0; if(S.park!=="auto") return 2.2;   // banda de aparcamiento más ancha que tiene la calle en ese lado
+  if(PKI.obj!==S.pk||PKI.v!==PKV){ PKI.obj=S.pk; PKI.v=PKV; PKI.m=new Map(); for(const [k,v] of Object.entries(S.pk)){ const m=k.match(/^(.*)-([LR])(?:-\d+)?$/); if(!m) continue; const key=m[1]+"-"+m[2]; PKI.m.set(key,Math.max(PKI.m.get(key)||0,v||0)); } }
+  return Math.max((side==="L"?s.pl:s.pr)||0, PKI.m.get(s.id+"-"+side)||0); }
+function freeMin(s){ const ln=parseInt(s.ln)||(s.ow?1:2); return ln>=2?5.5:3.0; }   // carriles que siguen pasando con coches aparcados
 function wcOf(s){ const k=slug(s.n); if(k&&S.sfix[k]!=null) return {w:S.sfix[k],src:"fix"}; if(s.w) return {w:s.w,src:"osm"};
+  const r=wcBase(s), pk=pkMax(s,"L")+pkMax(s,"R"); if(pk>0 && r.w<pk+freeMin(s)) return {w:Math.round((pk+freeMin(s))*2)/2,src:r.src}; return r; }
+function wcBase(s){
   if(s.wp){ const e=estW(s), ln=parseInt(s.ln)||2, c=Math.max(ln*3,Math.min(s.wp-(s.ac!=null?s.ac:2)*aceraPMUS(s.wp),e+4.5)); return {w:Math.round(c*2)/2,src:"pxom"}; }
   return {w:estW(s),src:"est"}; }
 const DRIVE=/^(residential|tertiary|primary|secondary|unclassified|living_street|service|trunk|primary_link)$/;
@@ -781,7 +797,7 @@ function bestPositions(b,hT){
         let o = free<span ? (lo+hi)/2 : S.lane==="near" ? hi-span/2 : S.lane==="far" ? lo+span/2 : (lo+hi)/2; o=Math.max(lo+LAD.wid/2,Math.min(o, hi-LAD.wid/2));
         const X0=cx+nx*o, Y0=cy+ny*o, nb=targetPt(b,X0,Y0), d=nb.d; if(d>30) continue;
         const brg=Math.atan2(nb.qy-Y0,nb.qx-X0)*180/Math.PI, rel=((brg-head)%360+540)%360-180, maxF=inMaxField(rel), fr=rel;
-        const e=evalPoint(d,hT,S.load,fr); let st=e.st, why=e.why;
+        const e=evalPoint(d,hT,effLoad(),fr); let st=e.st, why=e.why;
         { const fh=footHit(X0,Y0,head); if(fh){ st="bad"; why=fh.why; } }
         if(st!=="bad"){ const h=treesOnPath(nb.qx,nb.qy,d,hT,p,{x:X0,y:Y0}); if(h.length){ st="bad"; why="Árbol en la trayectoria"; } }
         if(st==="ok" && !maxF){ st="warn"; why="Campo lateral reducido"; }
@@ -839,7 +855,7 @@ function update(){
   refreshRoads(); drawCars(b);
   gCand.innerHTML=""; let cand=null;
   if(b){ cand=bestPositions(b,hRing); drawCandidates(cand); }
-  let rmin=null,rmax=null; for(let d=0; d<=30; d+=0.05){ if(evalPoint(d,hRing,S.load,false).st!=="bad"){ if(rmin===null) rmin=d; rmax=d; } }
+  let rmin=null,rmax=null; for(let d=0; d<=30; d+=0.05){ if(evalPoint(d,hRing,effLoad(),false).st!=="bad"){ if(rmin===null) rmin=d; rmax=d; } }
   // sectores de campo máximo
   const sect=(c,r)=>{ const a1=(c-LAD.fieldHalf)*Math.PI/180, a2=(c+LAD.fieldHalf)*Math.PI/180; return `M${T.x},${-T.y}L${T.x+r*Math.cos(a1)},${-(T.y+r*Math.sin(a1))}A${r},${r} 0 0 0 ${T.x+r*Math.cos(a2)},${-(T.y+r*Math.sin(a2))}Z`; };
   const rS=Math.max(...loadsX(true).map(l=>l.x))+1;
@@ -900,7 +916,7 @@ function info(b,a,rmin,rmax,h,cand){
       <div><h2>${b.n||b.a||"Edificio sin dirección en el plano"}</h2><p class="hint">${b.n&&b.a?b.a+" · ":""}Ref. catastral ${b.id.split("_")[0]}</p></div>${stPill}</div>
     <dl class="kv" style="margin:10px 0">
       <dt>Plantas</dt><dd><span class="stepper"><button type="button" id="lvMinus" aria-label="Quitar planta">−</button><b>${L.n}</b><button type="button" id="lvPlus" aria-label="Añadir planta">+</button></span> <span class="src ${L.src}">${srcTxt}</span>${L.src==="fix"?` <button type="button" class="btn" id="lvReset" style="padding:1px 6px;font-size:11px">quitar corrección</button>`:""}</dd>
-      <dt>Lateral</dt><dd><b>${(a.d-LAD.latOff).toFixed(2)} m</b> costado del camión → fachada<br><span class="hint">máx. con ${loadOf(S.load).label.split(" · ")[0].toLowerCase()}: ${(xl(S.load,a.rel)-LAD.latOff).toFixed(2)} m</span></dd>
+      <dt>Lateral</dt><dd><b>${(a.d-LAD.latOff).toFixed(2)} m</b> costado del camión → fachada<br><span class="hint">máx. con ${loadOf(effLoad()).label.split(" · ")[0].toLowerCase()}: ${(xl(S.load,a.rel)-LAD.latOff).toFixed(2)} m</span></dd>
       <dt>Eje</dt><dd>${a.d.toFixed(2)} m eje de giro → fachada</dd>
       ${curCfg(a.rel)?`<dt>Volado</dt><dd>${(a.d-curCfg(a.rel).vol).toFixed(2)} m borde del apoyo → fachada</dd>`:""}
       <dt>Trabajo por</dt><dd>${side}</dd>
@@ -1131,7 +1147,7 @@ function setLevels(b,n){
     else { try{ localStorage.setItem("oalto-fixes",JSON.stringify(S.fixes)); }catch(_){} }
   },600);
 }
-function setPk(k,v,quiet){ if(v===null) delete S.pk[k]; else S.pk[k]=v; if(!quiet) update(); if(db){ const ref=db.collection("aparcamiento").doc(k); (v===null?ref.delete():ref.set({w:v,at:new Date().toISOString()})).catch(()=>setStatus("No se pudo guardar el aparcamiento.")); } else { try{ localStorage.setItem("oalto-pk",JSON.stringify(S.pk)); }catch(_){} } }
+function setPk(k,v,quiet){ PKV++; if(v===null) delete S.pk[k]; else S.pk[k]=v; if(!quiet) update(); if(db){ const ref=db.collection("aparcamiento").doc(k); (v===null?ref.delete():ref.set({w:v,at:new Date().toISOString()})).catch(()=>setStatus("No se pudo guardar el aparcamiento.")); } else { try{ localStorage.setItem("oalto-pk",JSON.stringify(S.pk)); }catch(_){} } }
 function setRamp(id,v){ if(v===null) delete S.ramps[id]; else S.ramps[id]=v; buildRamps(); update(); if(db){ const ref=db.collection("rampas").doc(id); (v===null?ref.delete():ref.set({...v,at:new Date().toISOString()})).catch(()=>setStatus("No se pudo guardar la rampa.")); } else { try{ localStorage.setItem("oalto-ramps",JSON.stringify(S.ramps)); }catch(_){} } }
 try{ const l=JSON.parse(localStorage.getItem("oalto-pk")||"{}"); if(l&&typeof l==="object") S.pk=l; }catch(_){}
 try{ const l=JSON.parse(localStorage.getItem("oalto-ramps")||"{}"); if(l&&typeof l==="object") S.ramps=l; }catch(_){}
@@ -1177,6 +1193,8 @@ function presetStab(k){ const set=v=>{ S.zan={DI:v,DD:v,TI:v,TD:v}; S.zx={}; };
 function buildVehUI(){
   $("loadSeg").innerHTML = LAD.loads.slice().sort((a,b)=>a.k-b.k).map(l=>`<button type="button" data-load="${l.k}" aria-pressed="${l.k===S.load}">${l.label}</button>`).join("");
   $("loadSeg").querySelectorAll("button").forEach(b=>b.onclick=()=>{ S.load=+b.dataset.load; buildVehUI(); update(); });
+  document.querySelectorAll("[data-eq]").forEach(b=>{ const k=b.dataset.eq; b.setAttribute("aria-pressed",!!S[k]); b.onclick=()=>{ S[k]=!S[k]; buildVehUI(); update(); }; });
+  if($("equipInfo")) $("equipInfo").innerHTML=equipTxt();
   $("stab").innerHTML = LAD.stabs.map(x=>`<option value="${x.k}" ${x.k===S.stab?"selected":""}>${x.label}</option>`).join("");
   $("stab").disabled = LAD.stabs.length<2;
   syncStab(); const short={max:"Al máximo",one:"Un lado al máx.",min:"Al mínimo",fix:"Fijas 2,5 m"};
